@@ -56,16 +56,63 @@ registry.registerToolProvider(new ToolSet());
 ```
 
 ### 4. Dispatch tool calls
-
+ A full Example:
 ```java
-ToolCall call = new ToolCall();
-call.setName("run_shell_command");
-call.setArguments(Map.of("command", "ls -la"));
 
-ReflectiveToolDispatcher dispatcher = new ReflectiveToolDispatcher(registry);
-String result = dispatcher.dispatch(call);
+package com.ai_tool_calling;
 
-System.out.println(result);  // Output: Ran command: ls -la
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public class Main {
+
+    public static void main(String[] args) throws Exception { // Or handle JsonProcessingException
+        ToolRegistry toolRegistry = new ToolRegistry();
+        ToolSet toolSet = new ToolSet(); // Your ToolSet with callCommand
+        // To test tool execution error:
+        // toolSet.setShouldThrowError(true); // Add a flag to ToolSet to make callCommand throw an error
+        toolRegistry.registerToolProvider(toolSet);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        // --- Simulate LLM sending a ToolCall request ---
+        RunShellCommandArgs argsForTool = new RunShellCommandArgs();
+        argsForTool.setCommand("ls -l");
+        // To test argument parsing error:
+        // String malformedArgsJson = "{\"command_typo\": \"ls -l\"}";
+
+        ToolCall llmRequest = new ToolCall();
+        llmRequest.setId("call_test_789");
+        llmRequest.setType("function");
+
+        ToolCall.FunctionDetails functionDetails = new ToolCall.FunctionDetails();
+        functionDetails.setName("callComm");
+        functionDetails.setArguments(objectMapper.writeValueAsString(argsForTool));
+        // functionDetails.setArguments(malformedArgsJson); // For testing arg parsing error
+
+        llmRequest.setFunction(functionDetails);
+        // --- End of LLM request simulation ---
+
+        ReflectiveToolDispatcher toolDispatcher = new ReflectiveToolDispatcher(toolRegistry);
+
+        // Dispatch the call and get the result object.
+        // No try-catch needed around dispatch() itself if it always returns ToolCallResult.
+        ToolCallResult resultForLLM = toolDispatcher.dispatch(llmRequest);
+
+        // This resultForLLM is what you'd serialize and send back to the LLM API
+        String jsonResponseToLLM = objectMapper.writeValueAsString(resultForLLM);
+
+        System.out.println("JSON to send back to LLM:");
+        System.out.println(jsonResponseToLLM);
+
+        // You can check the content to see if it was a success or an error message
+        if (resultForLLM.getContent() instanceof String &&
+                ((String) resultForLLM.getContent()).toLowerCase().contains("error")) {
+            System.out.println("\nAn error occurred during tool call.");
+        } else {
+            System.out.println("\nTool call likely succeeded.");
+        }
+    }
+}
 ```
 
 ---
